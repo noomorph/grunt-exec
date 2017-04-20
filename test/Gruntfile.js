@@ -63,6 +63,21 @@ module.exports = function(grunt) {
       sync: true,
       shell: true
     }
+    , test11: {
+      cmd: 'node -e "setTimeout(process.exit, 1000, 0); console.log(\'it should appear 2 times on screen instead of 3\');"',
+      detached: true,
+      shell: true
+    }
+    , wait: {
+      cmd: function(ms) {
+          ms = Number(ms);
+          var log = 'console.log(\'timeout for %d sec\', ' + ms + ');';
+          var timeout = 'setTimeout(process.exit, ' + ms + ', 0);';
+          return 'node -e "' + log + timeout + '"';
+      },
+      sync: true,
+      shell: true
+    }
     }
   });
 

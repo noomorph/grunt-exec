@@ -16,6 +16,8 @@
 // TODO: support stdout and stderr Buffer objects passed in
 // TODO: stdin/stdout/stderr string as file name => open the file and read/write from it
 
+var runningProcesses = {};
+
 module.exports = function(grunt) {
   var cp = require('child_process')
     , f = require('util').format
@@ -37,7 +39,12 @@ module.exports = function(grunt) {
       }
     };
 
+    var deleteChildProcessReference = function() {
+      delete runningProcesses[target];
+    };
+
     var data = this.data
+      , target = this.target
       , execOptions = data.options !== undefined ? data.options : {}
       , stdout = data.stdout !== undefined ? data.stdout : true
       , stderr = data.stderr !== undefined ? data.stderr : true
@@ -46,12 +53,17 @@ module.exports = function(grunt) {
       , callback = _.isFunction(data.callback) ? data.callback : defaultCallback
       , callbackArgs = data.callbackArgs !== undefined ? data.callbackArgs : []
       , sync = data.sync !== undefined ? data.sync : false
+      , detached = data.detached !== undefined ? data.detached : false
       , exitCodes = data.exitCode || data.exitCodes || 0
+      , childProcess = runningProcesses[target]
       , command
-      , childProcess
       , args = [].slice.call(arguments, 0)
-      , done = this.async();
+      , doneWithoutDeletingChildProcessReference = this.async()
+      , done = _.flow(deleteChildProcessReference, doneWithoutDeletingChildProcessReference);
 
+    if (detached) {
+      console.log('detached:', data);
+    }
     // https://github.com/jharding/grunt-exec/pull/30
     exitCodes = _.isArray(exitCodes) ? exitCodes : [exitCodes];
 
@@ -61,7 +73,7 @@ module.exports = function(grunt) {
 
     if (!command) {
       defaultError('Missing command property.');
-      return done(false);
+      return doneWithoutDeletingChildProcessReference(false);
     }
 
     if (data.cwd && _.isFunction(data.cwd)) {
@@ -111,7 +123,7 @@ module.exports = function(grunt) {
 
     if (!_.isString(command)) {
       defaultError('Command property must be a string.');
-      return done(false);
+      return doneWithoutDeletingChildProcessReference(false);
     }
 
     verbose.subhead(command);
@@ -197,7 +209,7 @@ module.exports = function(grunt) {
         encoding = 'binary';
       } else {
         grunt.fail.fail('Encoding "' + encoding + '" is not a supported character encoding!');
-        done(false);
+        doneWithoutDeletingChildProcessReference(false);
       }
     }
 
@@ -232,12 +244,13 @@ module.exports = function(grunt) {
       verbose.writeln('exitcodes:', exitCodes.join(','));
     }
 
-    if (sync)
-    {
+    if (childProcess) {
+      verbose.writeln('Skipping spawn. pid=%d is already running', childProcess.pid);
+      return doneWithoutDeletingChildProcessReference();
+    } else if (sync) {
       childProcess = cp.spawnSync(command, args, execOptions);
-    }
-    else {
-      childProcess = cp.spawn(command, args, execOptions);
+    } else {
+      runningProcesses[target] = childProcess = cp.spawn(command, args, execOptions);
     }
 
     if (verbose) {
@@ -389,6 +402,7 @@ module.exports = function(grunt) {
     }
     else {
       childProcess.on('exit', exitFunc);      
+      doneWithoutDeletingChildProcessReference();
     }
     
   });
